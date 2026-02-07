@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Section Memory Game</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-back: #1e293b;
+            --card-front: #334155;
+            --accent: #38bdf8;
+        }
+
+        /* Fixed Position: No Scroll */
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: var(--bg-color);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh; /* Lock height */
+            margin: 0;
+            padding: 10px;
+            overflow: hidden; /* Tanggal scroll */
+        }
+
+        h1 { 
+            margin: 0 0 5px 0; 
+            color: var(--accent); 
+            font-size: 1.5rem; 
+        }
+
+        .game-info { 
+            margin-bottom: 15px; 
+            font-size: 1rem; 
+            background: rgba(255,255,255,0.1);
+            padding: 5px 15px;
+            border-radius: 20px;
+        }
+
+        /* Board Container */
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(4, 75px);
+            gap: 8px;
+            perspective: 1000px;
+        }
+
+        .card {
+            width: 75px;
+            height: 95px;
+            background-color: var(--card-back);
+            border-radius: 8px;
+            cursor: pointer;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.5s;
+        }
+
+        .card.flipped { transform: rotateY(180deg); }
+        .card.matched { border: 2px solid #4ef037; cursor: default; }
+
+        .card-front, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+        }
+
+        .card-back { background-color: var(--card-back); color: var(--accent); font-size: 1.5rem; }
+
+        .card-front {
+            background-color: var(--card-front);
+            transform: rotateY(180deg);
+            background-size: cover;
+            background-position: center;
+        }
+
+        .btn-reset {
+            margin-top: 20px;
+            padding: 10px 25px;
+            background: var(--accent);
+            border: none;
+            border-radius: 25px;
+            color: var(--bg-color);
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-reset:active { transform: scale(0.9); }
+
+        /* POPUP MODAL */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            left: 0; top: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.95);
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.3s;
+        }
+
+        .modal-content {
+            max-width: 85%;
+            max-height: 60vh;
+            border: 3px solid white;
+            border-radius: 10px;
+        }
+
+        @keyframes fadeIn { from {opacity: 0;} to {opacity: 1;} }
+
+        /* Responsive scaling for bigger screens */
+        @media (min-height: 600px) {
+            .game-board { grid-template-columns: repeat(4, 85px); gap: 10px; }
+            .card { width: 85px; height: 110px; }
+            h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>● AE4DA ●</h1>
+    <h1>🧠 CLASS MATCH 🧠</h1>
+    
+    <div class="game-info">Moves: <span id="moves">0</span> | Matches: <span id="matches">0</span>/8</div>
+
+    <div class="game-board" id="board"></div>
+
+    <button class="btn-reset" onclick="startGame()">Restart Game</button>
+
+    <div id="winModal" class="modal" onclick="this.style.display='none'">
+        <img class="modal-content" id="finalPhoto" src="">
+        <h2>🎉 TARA REUNION NA 🎉</h2>
+        <p>Tap to play again</p>
+    </div>
+
+    <script>
+        const images = [
+            'img/1.jpg',
+            'img/2.jpg',
+            'img/3.jpg',
+            'img/4.jpg',
+            'img/5.jpg',
+            'img/6.jpg',
+            'img/7.jpg',
+            'img/8.jpg'
+        ];
+
+        const finalImage = "img/final.jpg"; 
+
+        let cards = [...images, ...images];
+        let flippedCards = [];
+        let matchedCount = 0;
+        let moves = 0;
+        const board = document.getElementById('board');
+
+        function shuffle(array) { return array.sort(() => Math.random() - 0.5); }
+
+        function createCard(imgUrl) {
+            const card = document.createElement('div');
+            card.classList.add('card');
+            card.innerHTML = `<div class="card-back">?</div><div class="card-front" style="background-image: url('${imgUrl}')"></div>`;
+            card.addEventListener('click', () => flipCard(card, imgUrl));
+            return card;
+        }
+
+        function flipCard(card, imgUrl) {
+            if (flippedCards.length < 2 && !card.classList.contains('flipped') && !card.classList.contains('matched')) {
+                card.classList.add('flipped');
+                flippedCards.push({ card, imgUrl });
+                if (flippedCards.length === 2) {
+                    moves++;
+                    document.getElementById('moves').innerText = moves;
+                    checkMatch();
+                }
+            }
+        }
+
+        function checkMatch() {
+            const [card1, card2] = flippedCards;
+            if (card1.imgUrl === card2.imgUrl) {
+                card1.card.classList.add('matched');
+                card2.card.classList.add('matched');
+                matchedCount++;
+                document.getElementById('matches').innerText = matchedCount;
+                flippedCards = [];
+                if (matchedCount === 8) setTimeout(showWinPopup, 500);
+            } else {
+                setTimeout(() => {
+                    card1.card.classList.remove('flipped');
+                    card2.card.classList.remove('flipped');
+                    flippedCards = [];
+                }, 800);
+            }
+        }
+
+        function showWinPopup() {
+            document.getElementById('finalPhoto').src = finalImage;
+            document.getElementById('winModal').style.display = 'flex';
+        }
+
+        function startGame() {
+            board.innerHTML = '';
+            matchedCount = 0; moves = 0;
+            document.getElementById('matches').innerText = '0';
+            document.getElementById('moves').innerText = '0';
+            flippedCards = [];
+            shuffle(cards).forEach(img => board.appendChild(createCard(img)));
+        }
+
+        startGame();
+    </script>
+</body>
+</html>

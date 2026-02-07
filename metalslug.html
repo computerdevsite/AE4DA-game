@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Metal Slug - AE4DA Edition</title>
+    <style>
+        /* Fit to screen settings */
+        * { box-sizing: border-box; }
+        body { 
+            margin: 0; 
+            background: #000; 
+            overflow: hidden; 
+            font-family: 'Arial Black', sans-serif; 
+            touch-action: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        canvas { 
+            display: block; 
+            background: #444;
+            max-width: 100%; 
+            max-height: 100%; 
+            object-fit: contain; 
+            border: 2px solid #555; 
+        }
+
+        .controls { position: fixed; bottom: 20px; width: 100%; display: flex; justify-content: space-between; padding: 0 30px; box-sizing: border-box; z-index: 10; }
+        .btn-group { display: flex; gap: 15px; }
+        .btn { 
+            width: 70px; height: 70px; background: rgba(0,0,0,0.6); 
+            border: 3px solid #fff; border-radius: 50%; 
+            display: flex; justify-content: center; align-items: center; 
+            color: white; font-weight: bold; font-size: 18px;
+            user-select: none; -webkit-user-select: none;
+        }
+        .btn:active { background: rgba(255,255,255,0.4); transform: scale(0.9); }
+        
+        /* HUD Style with HP BAR */
+        .hud { position: absolute; top: 10px; left: 10px; color: #ff0; text-shadow: 2px 2px #000; font-size: 20px; z-index: 5; display: flex; flex-direction: column; gap: 5px; }
+        
+        .hp-container {
+            width: 200px;
+            height: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #fff;
+            position: relative;
+        }
+        
+        #hpBar {
+            width: 100%;
+            height: 100%;
+            background: #0f0; /* Green starts */
+            transition: width 0.2s, background-color 0.3s;
+        }
+        
+        /* DARK & BLUR OVERLAY */
+        #gameOverOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+            display: none;
+            z-index: 90;
+        }
+
+        #gameOverPopup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none; 
+            z-index: 100;
+            text-align: center;
+        }
+        #gameOverPopup img {
+            max-width: 80vw;
+            max-height: 50vh;
+            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
+        }
+        .retry-text {
+            color: #fff;
+            margin-top: 20px;
+            font-size: 24px;
+            text-shadow: 2px 2px #000;
+            cursor: pointer;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink { 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+
+    <div class="hud">
+        <div>SCORE: <span id="score">0</span></div>
+        <div style="font-size: 14px; color: #fff;">HEALTH</div>
+        <div class="hp-container">
+            <div id="hpBar"></div>
+        </div>
+        <span id="hp" style="display:none">100</span>
+    </div>
+    
+    <div id="gameOverOverlay"></div>
+
+    <div id="gameOverPopup">
+        <img id="deadImg" src="img/img1.jpg" alt="Mission Failed">
+        <div class="retry-text" onclick="location.reload()">MISSION RE-TRY?</div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="controls">
+        <div class="btn-group">
+            <div class="btn" id="leftBtn">←</div>
+            <div class="btn" id="rightBtn">→</div>
+        </div>
+        <div class="btn-group">
+            <div class="btn" id="jumpBtn" style="border-color: #0f0;">UP</div>
+            <div class="btn" id="fireBtn" style="border-color: #f00;">FIRE</div>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    canvas.width = 800;
+    canvas.height = 400;
+
+    const playerImg = new Image();
+    playerImg.src = 'img/7.jpg'; 
+
+    const tankImg = new Image();
+    tankImg.src = 'img/1.jpg'; 
+
+    const soldierImg = new Image();
+    soldierImg.src = 'img/8.jpg'; 
+
+    const bgImg = new Image();
+    bgImg.src = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRcjBoAQ6h3RwW0fi5rqrqnu8nljA7Fx6lbx8hEk6Xirb3gE7mt-T7CWLxE&s=10';
+
+    let score = 0;
+    let gameOver = false;
+    const keys = {};
+
+    const player = {
+        x: 100, y: 200, w: 60, h: 80,
+        dx: 0, dy: 0, speed: 6,
+        hp: 100, grounded: false, dir: 'right'
+    };
+
+    let bullets = [];
+    let enemies = [];
+
+    let loadedImages = 0;
+    const totalImages = 4; 
+
+    function imageLoaded() {
+        loadedImages++;
+        if (loadedImages >= totalImages) {
+            spawnEnemy();
+            update();
+        }
+    }
+
+    [playerImg, tankImg, soldierImg, bgImg].forEach(img => {
+        img.onload = imageLoaded;
+        img.onerror = imageLoaded;
+    });
+
+    function setupControls() {
+        window.addEventListener('keydown', e => { keys[e.code] = true; });
+        window.addEventListener('keyup', e => { keys[e.code] = false; });
+        const bind = (id, code) => {
+            const el = document.getElementById(id);
+            el.addEventListener('pointerdown', (e) => { e.preventDefault(); keys[code] = true; });
+            el.addEventListener('pointerup', (e) => { e.preventDefault(); keys[code] = false; });
+            el.addEventListener('pointerout', (e) => { e.preventDefault(); keys[code] = false; });
+        };
+        bind('leftBtn', 'KeyA'); bind('rightBtn', 'KeyD');
+        bind('jumpBtn', 'KeyW'); bind('fireBtn', 'Space');
+    }
+
+    function spawnEnemy() {
+        if (!gameOver) {
+            const isTank = Math.random() > 0.4; 
+            if (isTank) {
+                enemies.push({ type: 'tank', x: canvas.width + 100, y: 300, w: 80, h: 60, hp: 3, speed: 3 });
+            } else {
+                enemies.push({ type: 'soldier', x: canvas.width + 100, y: 310, w: 45, h: 50, hp: 1, speed: 5 });
+            }
+            setTimeout(spawnEnemy, 2000 + Math.random() * 2000);
+        }
+    }
+
+    function update() {
+        if (gameOver) return;
+
+        if (keys['KeyA']) { player.dx = -player.speed; player.dir = 'left'; }
+        else if (keys['KeyD']) { player.dx = player.speed; player.dir = 'right'; }
+        else { player.dx = 0; }
+
+        if (keys['KeyW'] && player.grounded) { player.dy = -15; player.grounded = false; }
+
+        if (keys['Space']) {
+            bullets.push({ 
+                x: player.dir === 'right' ? player.x + 50 : player.x, 
+                y: player.y + 35, 
+                vx: player.dir === 'right' ? 14 : -14 
+            });
+            keys['Space'] = false;
+        }
+
+        player.dy += 0.8;
+        player.x += player.dx;
+        player.y += player.dy;
+
+        if (player.y + player.h > 360) {
+            player.y = 360 - player.h;
+            player.dy = 0;
+            player.grounded = true;
+        }
+
+        bullets.forEach((b, bi) => {
+            b.x += b.vx;
+            enemies.forEach((en, ei) => {
+                if (b.x > en.x && b.x < en.x + en.w && b.y > en.y && b.y < en.y + en.h) {
+                    en.hp--; bullets.splice(bi, 1);
+                    if (en.hp <= 0) { 
+                        score += (en.type === 'tank' ? 150 : 50); 
+                        enemies.splice(ei, 1); 
+                        document.getElementById('score').innerText = score; 
+                    }
+                }
+            });
+            if(b.x < 0 || b.x > canvas.width) bullets.splice(bi, 1);
+        });
+
+        enemies.forEach((en, i) => {
+            en.x -= en.speed;
+            if (player.x < en.x + en.w && player.x + player.w > en.x && player.y + player.h > en.y) {
+                player.hp -= (en.type === 'tank' ? 1 : 0.5);
+                
+                // Update HP Visual Bar
+                const hpBar = document.getElementById('hpBar');
+                const hpSpan = document.getElementById('hp');
+                hpSpan.innerText = Math.ceil(player.hp);
+                hpBar.style.width = player.hp + "%";
+                
+                // Change color based on health
+                if (player.hp < 30) hpBar.style.backgroundColor = "#f00"; // Red
+                else if (player.hp < 60) hpBar.style.backgroundColor = "#ff0"; // Yellow
+                else hpBar.style.backgroundColor = "#0f0"; // Green
+
+                if (player.hp <= 0) { 
+                    player.hp = 0;
+                    hpBar.style.width = "0%";
+                    gameOver = true; 
+                    document.getElementById('gameOverOverlay').style.display = 'block';
+                    document.getElementById('gameOverPopup').style.display = 'block';
+                }
+            }
+            if (en.x + en.w < 0) enemies.splice(i, 1);
+        });
+
+        draw();
+        requestAnimationFrame(update);
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (bgImg.complete && bgImg.naturalWidth !== 0) {
+            ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+        } else {
+            ctx.fillStyle = '#1a2a6c'; ctx.fillRect(0,0,800,400);
+        }
+
+        ctx.save();
+        if (player.dir === 'left') {
+            ctx.scale(-1, 1);
+            ctx.drawImage(playerImg, -player.x - player.w, player.y, player.w, player.h);
+        } else {
+            ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
+        }
+        ctx.restore();
+
+        enemies.forEach(en => {
+            const currentImg = en.type === 'tank' ? tankImg : soldierImg;
+            if (currentImg.complete && currentImg.naturalWidth !== 0) {
+                ctx.drawImage(currentImg, en.x, en.y, en.w, en.h);
+            } else {
+                ctx.fillStyle = en.type === 'tank' ? 'red' : 'orange'; 
+                ctx.fillRect(en.x, en.y, en.w, en.h);
+            }
+        });
+
+        ctx.fillStyle = '#fff';
+        bullets.forEach(b => ctx.fillRect(b.x, b.y, 12, 4));
+    }
+
+    setupControls();
+</script>
+</body>
+</html>
